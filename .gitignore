@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+
+# generated synthetic training data / spatial datasets (per PROJECT_BRIEF.md)
+curriculum_nn/data/*
+!curriculum_nn/data/.gitkeep
+spatial_pde/data/*
+!spatial_pde/data/.gitkeep
