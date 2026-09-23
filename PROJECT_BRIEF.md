@@ -113,5 +113,22 @@ monod-ml-handoff/
    `shared/tests/test_kinetics.py`. `spatial_pde/` already imports and reuses
    it (see `docs/spatial_pde_spec.md`'s "Status" section) for its local
    reaction term, batched across mesh cells with no duplicated math.
-   `curriculum_nn/` should do the same for its synthetic-data generator
+   `curriculum_nn/` does the same: its synthetic-data generator
+   (`curriculum_nn/src/data_gen.py`) calls `reaction_rhs` directly (via a
+   generalized equilibrium-solving trick, see `docs/curriculum_nn_spec.md`)
    rather than reimplementing the ODE.
+
+## Current status of the two follow-on projects
+
+- **`spatial_pde/`**: implemented (mesh-general finite-volume solver, 1D/2D/3D,
+  including real-geometry import) and validated per its spec's own plan. See
+  `docs/spatial_pde_spec.md`'s "Status" section for what's done and known v1
+  limitations.
+- **`curriculum_nn/`**: a working, tested v1 pipeline for Stage 0-1 (pure
+  Monod, no transfer/lag) — data generation, a permutation-equivariant
+  size-agnostic model, training loop, and both evaluation metrics the spec
+  calls for. Parameter-recovery accuracy at a quick/small experimental scale
+  is still weak (~40-60% relative error) — a working pipeline, not yet an
+  accurate fitting tool. Stage 2 (transfer) and Stage 3 (lag) are not
+  started. See `docs/curriculum_nn_spec.md`'s "Status" section for the
+  honest first-experiment results and what's worth validating next.

@@ -73,19 +73,42 @@ exact math (see `shared/tests/test_kinetics.py`).
     construction can't represent a sharply pinched (non-convex) profile
     (use `Mesh.from_meshio` + an external mesher for that); the lag state
     `q` is cell-autonomous and does not itself diffuse.
-- **`curriculum_nn/`** — still spec-only, no implementation (unstarted).
+- **`curriculum_nn/`** — a v1 curriculum-trained parameter-fitting pipeline,
+  for **Stage 0-1 only** (pure Monod, no transfer/lag — see
+  `docs/curriculum_nn_spec.md`'s "Status" section for what's not done yet):
+  - `src/model.py`'s `MonodParameterGNN` is a permutation-EQUIVARIANT
+    bipartite message-passing network over strain/metabolite(/toxin) nodes —
+    tested to give identical (correctly-permuted) predictions under any
+    relabeling of strain or metabolite order, and to run on any (S, M, T)
+    with the same weights, which is what lets one model train on Stage 0's
+    small systems and keep training, unmodified, on Stage 1's larger ones.
+  - `src/data_gen.py` generates synthetic (trajectory, ground-truth params)
+    data via a generalized equilibrium-solving trick (any topology, not a
+    hand-derived formula per case — see the spec doc) so training data has
+    real, reachable equilibria instead of mostly-degenerate random draws.
+  - `src/curriculum.py` + `src/train.py` + `src/eval.py`: the training loop
+    (one model/optimizer reused across stages), CLI
+    (`python -m curriculum_nn.src.train`), and both metrics the spec calls
+    for (parameter recovery error, trajectory reconstruction error).
+  - **Honest first-experiment result**: the pipeline runs end to end
+    (data → train → eval, loss decreases, curriculum-transfer check runs),
+    but parameter-recovery accuracy at a quick/small scale is still ~40-60%
+    relative error — a working, testable pipeline, not yet an accurate
+    fitting tool. See `docs/curriculum_nn_spec.md`'s "Status" section for
+    what's worth validating next before investing further.
 
 ## Setup
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-pytest   # runs shared/tests + spatial_pde/tests
-# add torch/jax + graph-nn library of choice once curriculum_nn's
-# architecture is chosen (see docs/curriculum_nn_spec.md).
+pytest   # runs shared/tests + spatial_pde/tests + curriculum_nn/tests
+python -m curriculum_nn.src.train --stages stage0 stage1 --n-per-tier 40
 ```
 
 ## Status
 
 `shared/monod_core/` (configurable kinetics) and `spatial_pde/` (mesh-general
-PDE solver) are implemented and tested. `curriculum_nn/` is still spec-only.
+PDE solver) are implemented and tested. `curriculum_nn/` has a working,
+tested v1 pipeline for Stage 0-1, with accuracy/scale-up work still open
+(see its spec doc's "Status" section).

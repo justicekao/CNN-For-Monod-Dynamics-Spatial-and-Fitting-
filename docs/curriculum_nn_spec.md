@@ -1,5 +1,54 @@
 # Project A: Curriculum-trained NN for Monod parameter fitting
 
+## Status: v1 implemented in `curriculum_nn/src/` -- Stage 0-1 only
+
+The full pipeline below (data generation, model, training loop, CLI,
+evaluation) is implemented and tested (`curriculum_nn/tests/`) for
+**Stage 0 and Stage 1 only** (pure Monod, no transconjugation/transfer, no
+lag state) -- Stage 2+ are explicitly not started; see "What's NOT done yet"
+at the end of this file. Read the rest of this document for the design
+reasoning; this section records what was actually built and, importantly,
+an honest first read on how well it currently works, per this doc's own
+instruction below to "note this to the user early... before committing
+further engineering effort."
+
+**Architecture decision made**: direction (1), a permutation-EQUIVARIANT
+bipartite message-passing network over strain and metabolite (and toxin)
+nodes (`curriculum_nn/src/model.py`, `MonodParameterGNN`) -- confirmed by
+test to give identical predictions (permuted correctly) under any
+relabeling of strain or metabolite order, and to accept any (S, M, T)
+shape with the same weights (`test_model.py`). This is what lets ONE
+model train on Stage 0's small tiers and continue training, unmodified,
+on Stage 1's larger ones (`curriculum_nn/src/curriculum.py`'s
+`train_curriculum`, which literally reuses one model/optimizer across
+stages rather than any padding/fine-tuning scheme).
+
+**First-experiment result (honest, not polished)**: running
+`python -m curriculum_nn.src.train --n-per-tier 40` end to end works --
+data generates, trains, and evaluates without error, training loss
+decreases, and the curriculum-transfer check (zero-shot on an unseen
+larger tier, before vs. after training on the stage containing it) runs
+and shows improvement. But parameter-recovery relative error at this
+scale (tens of samples per tier, hundreds of epochs) is still in the
+40-60% range -- this is a working, testable PIPELINE, not yet a fitting
+tool accurate enough to trust on real data. Before investing further
+engineering effort, the open questions worth validating empirically (per
+this doc's original recommendation) are: how much does recovery error
+improve with more synthetic samples per tier vs. more training epochs vs.
+a bigger embed_dim/n_rounds; and whether an ablation (train Stage 1
+directly vs. Stage 0-then-Stage-1) shows the curriculum actually helps,
+which the current CLI does not isolate (its zero-shot check measures
+"did training on the stage help", not "did the PRIOR stage's training
+help beyond what Stage-1-alone would have given").
+
+**What's NOT done yet** (explicitly out of scope for this v1, matching
+the stage list below): Stage 2 (transconjugation/transfer, the `Z`
+matrix) and Stage 3 (the lag state `q`) synthetic data and evaluation;
+sparsity/top-k masking as an explicit training prior (data_gen.py exposes
+a `sparsity` knob but Stage 0/1 use dense (`sparsity=1.0`) matrices);
+benchmarking against the MATLAB `lsqnonlin` approach; and anything with
+real (non-synthetic) data.
+
 ## Goal
 
 Given a simulated (or eventually real) multi-strain/metabolite/toxin
@@ -115,19 +164,45 @@ to the next:
   check with the user before committing raw experimental data to a repo) are
   candidate real-world validation sets once the synthetic-data pipeline works.
 
-## Suggested file layout inside `curriculum_nn/`
+## File layout inside `curriculum_nn/` (as implemented)
 
 ```
 curriculum_nn/
 ├── src/
-│   ├── data_gen.py       # synthetic (params -> trajectory) generator per stage
-│   ├── model.py          # the NN architecture (GNN/set-based recommended)
-│   ├── curriculum.py     # stage progression / training loop / transfer logic
-│   ├── train.py          # CLI entry point
+│   ├── data_gen.py       # synthetic (params -> trajectory) generator per stage,
+│   │                      # via a generalized equilibrium-solving trick (see below)
+│   ├── model.py          # MonodParameterGNN: permutation-equivariant bipartite
+│   │                      # strain<->metabolite[<->toxin] message-passing network
+│   ├── curriculum.py     # batching, log-space parameter loss, stage progression
+│   ├── train.py          # CLI entry point (python -m curriculum_nn.src.train)
 │   └── eval.py           # parameter-recovery + trajectory-reconstruction metrics
 ├── tests/
-│   └── test_data_gen.py  # at minimum: generated trajectories are finite,
-│                          # bounded, and reproduce known equilibria
-└── data/                  # generated datasets (gitignore the large files;
-                            # keep a small fixture set for tests)
+│   ├── test_data_gen.py    # trajectories finite/bounded/positive; sampled configs
+│   │                        # have a GENUINE equilibrium (dN=dx=dtox=0 exactly)
+│   ├── test_model.py        # permutation equivariance (strain AND metabolite order),
+│   │                        # arbitrary (S,M,T) incl. T=0, n_points-invariant features
+│   └── test_curriculum.py    # training loss decreases; one model/optimizer trains
+│                              # across stages without shape errors
+└── data/                  # generated datasets (gitignored; see repo .gitignore)
 ```
+
+### The equilibrium-solving trick actually used (generalizes `_solve_equilibrium`)
+
+`conjugation_unified_model.py`'s `_solve_equilibrium` hand-derives the
+supply rate needed for ONE specific topology (single strain, single
+resource). `data_gen.solve_equilibrium` generalizes this to ANY (S, M, T)
+and sharing topology WITHOUT hand-deriving a formula per case, by using
+`reaction_rhs` itself: zero out `delta`/`m_supply`/`D_dilution` (and the
+toxin equivalents), evaluate `reaction_rhs` at the chosen target
+equilibrium (`N*`, `x*`, `tox*`) to get the "raw" growth/consumption/
+secretion terms with no mortality or supply/dilution mixed in, then
+solve algebraically for the `delta`/`m_supply`/`m_toxin_supply` that
+exactly zero out `dN`/`dx`/`dtox` at that point. This works regardless of
+how strains share (or don't share) metabolite pools, whether toxins are
+present, or how the uptake-denominator variants (`ToxinMode`,
+`share_metabolite_uptake`) are configured, since it never assumes a
+specific closed-form equilibrium condition -- it just asks the shared
+kinetics module what the raw rates are and inverts linearly for the
+missing ones. Samples are rejected and resampled if the resulting rates
+aren't physically sane (e.g. non-positive mortality); see
+`_is_physically_valid`.

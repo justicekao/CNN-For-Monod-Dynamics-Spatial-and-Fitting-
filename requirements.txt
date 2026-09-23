@@ -3,3 +3,4 @@ scipy
 matplotlib
 meshio
 pytest
+torch
