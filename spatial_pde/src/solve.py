@@ -10,11 +10,10 @@ concentrations) while the reaction step is integrated in LOG space
 "operator splitting" option that doc recommends as the more direct
 extension of the already-validated log-space well-mixed ODE approach.
 
-v1 uses first-order (Lie) splitting -- reaction then transport, each
-over the full timestep dt -- documented explicitly here since it's a
-real accuracy/simplicity tradeoff, not an oversight: Strang splitting
-(half-transport, full-reaction, half-transport) is the natural upgrade
-if second-order-in-time accuracy is needed later.
+solve_spatial()'s `splitting` argument picks first-order (Lie: reaction
+then transport, each over the full timestep) or second-order (Strang:
+half-transport, full-reaction, half-transport) splitting -- see that
+function's docstring for the accuracy/cost tradeoff.
 
 The lag/readiness state q (if present) is treated as a per-cell,
 cell-autonomous property -- it does not diffuse or advect between cells,
@@ -111,18 +110,39 @@ def _transport_substep(state: MeshState, solvers, rhs_const, config: MonodConfig
 
 
 def solve_spatial(spatial: SpatialConfig, initial_state: MeshState, t_span, dt: float,
-                   save_every: int = 1) -> SpatialResult:
+                   save_every: int = 1, splitting: str = "lie") -> SpatialResult:
+    """splitting="lie" (default): reaction(dt) then transport(dt) each step
+    -- first-order accurate in time, cheaper (one transport solve per step).
+    splitting="strang": transport(dt/2), reaction(dt), transport(dt/2) --
+    second-order accurate in time (the local splitting error is O(dt^3) per
+    step vs. O(dt^2) for Lie), at roughly double the transport-solve cost.
+    Prefer "strang" whenever time-accuracy at a practical (not vanishingly
+    small) dt matters; "lie" is fine once dt is already small relative to
+    both the reaction and transport timescales.
+    """
+    if splitting not in ("lie", "strang"):
+        raise ValueError(f"splitting must be 'lie' or 'strang', got {splitting!r}")
+
     t0, t1 = t_span
     n_steps = int(round((t1 - t0) / dt))
-    solvers, rhs_const = _precompute_implicit_transport(spatial, dt)
+
+    if splitting == "lie":
+        solvers, rhs_const = _precompute_implicit_transport(spatial, dt)
+    else:
+        solvers, rhs_const = _precompute_implicit_transport(spatial, dt / 2.0)
 
     state = initial_state
     t = t0
     ts, Ns, xs, toxs, qs = [t], [state.N], [state.x], [state.tox], [state.q]
 
     for step in range(1, n_steps + 1):
-        state = reaction_substep(state, spatial.reaction, dt)
-        state = _transport_substep(state, solvers, rhs_const, spatial.reaction)
+        if splitting == "lie":
+            state = reaction_substep(state, spatial.reaction, dt)
+            state = _transport_substep(state, solvers, rhs_const, spatial.reaction)
+        else:
+            state = _transport_substep(state, solvers, rhs_const, spatial.reaction)
+            state = reaction_substep(state, spatial.reaction, dt)
+            state = _transport_substep(state, solvers, rhs_const, spatial.reaction)
         t = t0 + step * dt
         if step % save_every == 0 or step == n_steps:
             ts.append(t)

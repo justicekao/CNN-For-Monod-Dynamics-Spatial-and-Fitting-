@@ -49,23 +49,30 @@ exact math (see `shared/tests/test_kinetics.py`).
     3D-tetrahedron simplicial mesh, including `Mesh.from_meshio(...)` to
     import a real/arbitrary geometry (a segmented gut scan, a bespoke
     experimental vessel) built in Gmsh/CAD/any tool `meshio` reads. Built-in
-    generators (`generate_line` — with an optional variable cross-sectional
-    area profile to cheaply approximate a real gut's changing diameter,
-    `generate_rectangle`, `generate_box`) cover common cases without needing
-    an external mesh file.
+    generators cover common cases without needing an external mesh file:
+    `generate_line` (optional variable cross-sectional area profile),
+    `generate_rectangle`, `generate_box`, and `generate_tube` (a genuinely
+    3D swept, variable-radius lumen approximating a real gut's changing
+    diameter — see its docstring/`docs/spatial_pde_spec.md` for the
+    convex-hull caveat on sharply pinched profiles).
   - `src/transport.py` + `src/boundary.py`: dimension-agnostic diffusion
     (two-point flux) and advection (upwind) operators with per-boundary-tag
     Dirichlet/Neumann(no-flux default)/Outflow conditions.
   - `src/solve.py`: operator-split time integration (reaction in log-space via
     `shared/monod_core`, transport implicit in linear space), reusing the
-    exact same kinetics as the well-mixed case per grid cell.
+    exact same kinetics as the well-mixed case per grid cell. Supports both
+    first-order (Lie, default) and second-order (Strang) splitting —
+    `test_splitting_accuracy.py` confirms Strang is measurably more accurate
+    at matched timestep.
   - Validated per `docs/spatial_pde_spec.md`'s validation plan: zero-diffusion
     reduces exactly to the well-mixed ODE, pure diffusion conserves mass on
-    1D/2D/3D meshes alike (`spatial_pde/tests/`).
+    1D/2D/3D meshes (including the tube) alike (`spatial_pde/tests/`).
   - **Known v1 limitations** (see `docs/spatial_pde_spec.md` "Status" section
-    for the reasoning): first-order (Lie) operator splitting, not Strang;
-    two-point-flux diffusion assumes a reasonably orthogonal/Delaunay-quality
-    mesh; the lag state `q` is cell-autonomous and does not itself diffuse.
+    for the reasoning): two-point-flux diffusion assumes a reasonably
+    orthogonal/Delaunay-quality mesh; `generate_tube`'s convex-hull
+    construction can't represent a sharply pinched (non-convex) profile
+    (use `Mesh.from_meshio` + an external mesher for that); the lag state
+    `q` is cell-autonomous and does not itself diffuse.
 - **`curriculum_nn/`** — still spec-only, no implementation (unstarted).
 
 ## Setup

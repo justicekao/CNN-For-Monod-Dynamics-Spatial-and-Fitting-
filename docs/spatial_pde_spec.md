@@ -138,11 +138,13 @@ Modeling decisions the sections above left open, as actually resolved:
 - **Numerical approach**: option (a), operator splitting — reaction
   integrated in log-space per cell (reusing `shared/monod_core` unmodified,
   batched across cells), diffusion+advection integrated implicitly
-  (backward Euler) in linear space. **v1 uses first-order (Lie) splitting**
-  (reaction then transport, each over the full timestep) rather than
-  second-order Strang splitting (half-transport / full-reaction /
-  half-transport) — a real accuracy-vs-simplicity tradeoff worth revisiting
-  if a group needs tighter time-accuracy, not an oversight.
+  (backward Euler) in linear space. `solve_spatial(..., splitting=...)`
+  supports both first-order (`"lie"`: reaction then transport, each over the
+  full timestep — cheaper, one transport solve/step) and second-order
+  (`"strang"`: half-transport / full-reaction / half-transport — costs one
+  extra transport solve/step, but is measurably more accurate at the same dt;
+  see `test_splitting_accuracy.py`). Default is `"lie"`; use `"strang"`
+  whenever time-accuracy at a practical (not vanishingly small) dt matters.
 - **Discretization**: finite-volume (not finite-difference), on a simplicial
   mesh (1D line segments, 2D triangles, or 3D tetrahedra) — chosen
   specifically because it generalizes to unstructured/imported geometry and
@@ -179,5 +181,20 @@ Modeling decisions the sections above left open, as actually resolved:
   the theory that no single convention generalizes across meshing tools —
   instead you supply a `boundary_tag_fn(face_centroid) -> tag_name`
   classifier, which is usually a one-line function based on position. The
-  built-in generators (`generate_line`, `generate_rectangle`, `generate_box`)
-  apply sensible default tags automatically.
+  built-in generators (`generate_line`, `generate_rectangle`, `generate_box`,
+  `generate_tube`) apply sensible default tags automatically.
+- **`generate_tube(length, radius_profile, ...)`**: a genuinely 3D swept
+  tube (solid, varying-radius lumen cross-section) for approximating a real
+  gut's changing diameter in full 3D, tagged `proximal`/`distal`/`wall`.
+  Built via Delaunay tetrahedralization of a structured point cloud, which
+  means it fills exactly the CONVEX HULL of that point cloud — an accurate
+  mesh for a monotonic or gently-varying radius profile, but a sharply
+  pinched profile (a true sphincter narrowing toward zero) gets "bridged
+  over" rather than represented, since a convex hull can't hold a
+  concavity. For anatomically precise or sharply non-convex gut geometry,
+  build the mesh externally (Gmsh, or any `meshio`-readable tool) and use
+  `Mesh.from_meshio()` instead, which has no such limitation. See
+  `test_tube_mesh.py` for the volume-convergence and boundary-tagging
+  checks (a coarse angular resolution under-estimates volume the way an
+  inscribed hexagon under-estimates its circle's area — that's expected
+  discretization error, not a bug, and it shrinks with `n_theta`).

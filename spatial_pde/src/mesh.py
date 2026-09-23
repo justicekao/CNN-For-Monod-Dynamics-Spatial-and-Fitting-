@@ -301,6 +301,64 @@ def generate_rectangle(lx: float, ly: float, nx: int, ny: int) -> Mesh:
     return mesh
 
 
+def generate_tube(length: float, radius_profile: Callable[[np.ndarray], np.ndarray],
+                   n_axial: int, n_radial: int = 3, n_theta: int = 8,
+                   proximal_tag: str = "proximal", distal_tag: str = "distal",
+                   wall_tag: str = "wall") -> Mesh:
+    """A genuinely 3D tetrahedral mesh of a tube swept along the x-axis
+    with cross-sectional radius radius_profile(x) -- letting a real gut's
+    changing diameter be represented in full 3D (a solid lumen cross-
+    section, not a hollow shell), rather than generate_line's cheap
+    variable-cross-section approximation of the same thing in 1D.
+
+    Built via Delaunay tetrahedralization of a structured point cloud
+    (axial slices x radial rings x angular divisions, plus one center
+    point per slice). CAVEAT: a Delaunay tessellation always fills exactly
+    the CONVEX HULL of its input points. That's an accurate tube mesh for
+    a monotonic or gently-varying radius profile, but a sharply pinched
+    profile (e.g. a true sphincter narrowing to near zero) will have that
+    pinch "bridged over" by extra tetrahedra, since a convex hull can't
+    represent a concavity along the axis. For anatomically precise or
+    sharply non-convex geometry, build the mesh externally (Gmsh, or any
+    tool exporting a format meshio reads) and load it with
+    Mesh.from_meshio() instead -- that path has no such limitation.
+    """
+    from scipy.spatial import Delaunay
+
+    x_nodes = np.linspace(0.0, length, n_axial + 1)
+    radii = np.asarray(radius_profile(x_nodes), dtype=float)
+    if np.any(radii <= 0):
+        raise ValueError("radius_profile must be strictly positive everywhere")
+
+    thetas = np.linspace(0.0, 2 * np.pi, n_theta, endpoint=False)
+    points = []
+    for xi, ri in zip(x_nodes, radii):
+        points.append((xi, 0.0, 0.0))
+        for j in range(1, n_radial + 1):
+            frac = j / n_radial
+            for th in thetas:
+                points.append((xi, frac * ri * np.cos(th), frac * ri * np.sin(th)))
+    points = np.array(points)
+
+    delaunay = Delaunay(points)
+    cells = [tuple(int(v) for v in c) for c in delaunay.simplices
+             if _simplex_measure(points[list(c)]) > 1e-12]  # drop qhull's degenerate slivers
+
+    mesh = Mesh(dim=3, points=points, cells=cells)
+
+    def tag_fn(centroid, length=length, proximal_tag=proximal_tag,
+               distal_tag=distal_tag, wall_tag=wall_tag):
+        x = centroid[0]
+        if x < 1e-6:
+            return proximal_tag
+        if x > length - 1e-6:
+            return distal_tag
+        return wall_tag
+
+    mesh.tag_boundary(tag_fn)
+    return mesh
+
+
 def generate_box(lx: float, ly: float, lz: float, nx: int, ny: int, nz: int) -> Mesh:
     """A structured 3D mesh (each grid cube split into 6 tetrahedra) over
     [0,lx] x [0,ly] x [0,lz]. Boundary faces are tagged x0/x1/y0/y1/z0/z1."""
