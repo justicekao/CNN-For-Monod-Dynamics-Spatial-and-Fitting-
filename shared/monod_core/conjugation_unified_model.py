@@ -176,50 +176,56 @@ def run_scenario(N_recipient_0, N_donor_0, N_tconj_0, t_end, n_points=200):
 # =============================================================================
 # SCENARIO 1: asymmetric start (matching the first target figure)
 # =============================================================================
-t1, traj1 = run_scenario(N_recipient_0=8e7, N_donor_0=5e3, N_tconj_0=30, t_end=96)
+# Guarded so this module can be imported (e.g. by shared/tests/test_kinetics.py,
+# to validate kinetics.py's general reaction_rhs() against this script's exact
+# reference math) without re-running both scenarios/plots every import. Only
+# structural -- no formula above this line was touched.
 
-# =============================================================================
-# SCENARIO 2: symmetric start (matching the second target figure)
-# =============================================================================
-t2, traj2 = run_scenario(N_recipient_0=5e5, N_donor_0=5e5, N_tconj_0=200, t_end=500)
+if __name__ == "__main__":
+    t1, traj1 = run_scenario(N_recipient_0=8e7, N_donor_0=5e3, N_tconj_0=30, t_end=96)
 
-# =============================================================================
-# PLOT
-# =============================================================================
-fig, axes = plt.subplots(1, 2, figsize=(13, 5.5))
+    # =========================================================================
+    # SCENARIO 2: symmetric start (matching the second target figure)
+    # =========================================================================
+    t2, traj2 = run_scenario(N_recipient_0=5e5, N_donor_0=5e5, N_tconj_0=200, t_end=500)
 
-axes[0].plot(t1, traj1[:, 0], "o-", color="#e8c547", label="Recipient", markersize=3)
-axes[0].plot(t1, traj1[:, 1], "o-", color="#c0562f", label="Donor", markersize=3)
-axes[0].plot(t1, traj1[:, 2], "o-", color="#5aa06c", label="Transconjugant", markersize=3)
-axes[0].axhline(30, linestyle=":", color="gray", linewidth=1)
-axes[0].set_yscale("log"); axes[0].set_ylim(1, 1e10)
-axes[0].set_xlabel("Time (hours)"); axes[0].set_ylabel("CFU/mL")
-axes[0].set_title("Scenario 1: asymmetric start\n(Recipient=8e7, Donor=5e3)", fontsize=10)
-axes[0].legend(fontsize=8)
+    # =========================================================================
+    # PLOT
+    # =========================================================================
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5.5))
 
-mask = t2 <= 500
-axes[1].plot(t2[mask], traj2[mask, 0], "-", color="#5aa06c", label="Recipient")
-axes[1].plot(t2[mask], traj2[mask, 1], "-", color="#8a4fa3", label="Donor")
-axes[1].plot(t2[mask], traj2[mask, 2], "-", color="#4a90d9", label="Transconjugant")
-axes[1].axhline(200, linestyle=":", color="gray", linewidth=1)
-axes[1].set_yscale("log"); axes[1].set_ylim(1, 1e10)
-axes[1].set_xlabel("Time (hours)"); axes[1].set_ylabel("CFU/mL")
-axes[1].set_title("Scenario 2: symmetric start, extended time\n(Recipient=Donor=5e5)", fontsize=10)
-axes[1].legend(fontsize=8)
+    axes[0].plot(t1, traj1[:, 0], "o-", color="#e8c547", label="Recipient", markersize=3)
+    axes[0].plot(t1, traj1[:, 1], "o-", color="#c0562f", label="Donor", markersize=3)
+    axes[0].plot(t1, traj1[:, 2], "o-", color="#5aa06c", label="Transconjugant", markersize=3)
+    axes[0].axhline(30, linestyle=":", color="gray", linewidth=1)
+    axes[0].set_yscale("log"); axes[0].set_ylim(1, 1e10)
+    axes[0].set_xlabel("Time (hours)"); axes[0].set_ylabel("CFU/mL")
+    axes[0].set_title("Scenario 1: asymmetric start\n(Recipient=8e7, Donor=5e3)", fontsize=10)
+    axes[0].legend(fontsize=8)
 
-fig.suptitle("ONE unified model (same intrinsic parameters) -- both scenarios from initial conditions alone", fontsize=11)
-fig.tight_layout()
-fig.savefig("conjugation_unified_result.png", dpi=150)
-print("saved conjugation_unified_result.png\n")
+    mask = t2 <= 500
+    axes[1].plot(t2[mask], traj2[mask, 0], "-", color="#5aa06c", label="Recipient")
+    axes[1].plot(t2[mask], traj2[mask, 1], "-", color="#8a4fa3", label="Donor")
+    axes[1].plot(t2[mask], traj2[mask, 2], "-", color="#4a90d9", label="Transconjugant")
+    axes[1].axhline(200, linestyle=":", color="gray", linewidth=1)
+    axes[1].set_yscale("log"); axes[1].set_ylim(1, 1e10)
+    axes[1].set_xlabel("Time (hours)"); axes[1].set_ylabel("CFU/mL")
+    axes[1].set_title("Scenario 2: symmetric start, extended time\n(Recipient=Donor=5e5)", fontsize=10)
+    axes[1].legend(fontsize=8)
 
-print("SCENARIO 1 (asymmetric start):")
-print(f"{'t (h)':>6s} {'Recipient':>12s} {'Donor':>12s} {'Transconjugant':>15s}")
-for cp in [0, 24, 48, 72, 96]:
-    idx = np.searchsorted(t1, cp)
-    print(f"{cp:6d} {traj1[idx,0]:12.3g} {traj1[idx,1]:12.3g} {traj1[idx,2]:15.3g}")
+    fig.suptitle("ONE unified model (same intrinsic parameters) -- both scenarios from initial conditions alone", fontsize=11)
+    fig.tight_layout()
+    fig.savefig("conjugation_unified_result.png", dpi=150)
+    print("saved conjugation_unified_result.png\n")
 
-print("\nSCENARIO 2 (symmetric start):")
-print(f"{'t (h)':>6s} {'Recipient':>12s} {'Donor':>12s} {'Transconjugant':>15s}")
-for cp in [0, 24, 48, 100, 250, 500]:
-    idx = np.searchsorted(t2, cp)
-    print(f"{cp:6d} {traj2[idx,0]:12.3g} {traj2[idx,1]:12.3g} {traj2[idx,2]:15.3g}")
+    print("SCENARIO 1 (asymmetric start):")
+    print(f"{'t (h)':>6s} {'Recipient':>12s} {'Donor':>12s} {'Transconjugant':>15s}")
+    for cp in [0, 24, 48, 72, 96]:
+        idx = np.searchsorted(t1, cp)
+        print(f"{cp:6d} {traj1[idx,0]:12.3g} {traj1[idx,1]:12.3g} {traj1[idx,2]:15.3g}")
+
+    print("\nSCENARIO 2 (symmetric start):")
+    print(f"{'t (h)':>6s} {'Recipient':>12s} {'Donor':>12s} {'Transconjugant':>15s}")
+    for cp in [0, 24, 48, 100, 250, 500]:
+        idx = np.searchsorted(t2, cp)
+        print(f"{cp:6d} {traj2[idx,0]:12.3g} {traj2[idx,1]:12.3g} {traj2[idx,2]:15.3g}")

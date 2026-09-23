@@ -166,36 +166,41 @@ def system_rhs(t, y_log):
 # =============================================================================
 # RUN
 # =============================================================================
+# Guarded so this module can be imported (e.g. by shared/tests/test_kinetics.py,
+# to validate kinetics.py's general reaction_rhs() against this script's exact
+# reference math) without re-running the integration/plot every import. Only
+# structural -- no formula above this line was touched.
 
-y0 = np.maximum(np.array(Y0, dtype=float), _EPS)
-t_eval = np.linspace(T_START, T_END, N_POINTS)
+if __name__ == "__main__":
+    y0 = np.maximum(np.array(Y0, dtype=float), _EPS)
+    t_eval = np.linspace(T_START, T_END, N_POINTS)
 
-sol = solve_ivp(system_rhs, (T_START, T_END), np.log(y0), t_eval=t_eval, method="LSODA", rtol=1e-6, atol=1e-9)
-if not sol.success:
-    raise RuntimeError(f"integration failed: {sol.message}")
-traj = np.exp(sol.y.T)   # (n_points, 6), back to linear space
+    sol = solve_ivp(system_rhs, (T_START, T_END), np.log(y0), t_eval=t_eval, method="LSODA", rtol=1e-6, atol=1e-9)
+    if not sol.success:
+        raise RuntimeError(f"integration failed: {sol.message}")
+    traj = np.exp(sol.y.T)   # (n_points, 6), back to linear space
 
-# =============================================================================
-# PLOT + REPORT
-# =============================================================================
+    # =========================================================================
+    # PLOT + REPORT
+    # =========================================================================
 
-state_names = STRAIN_NAMES + METABOLITE_NAMES + [TOXIN_NAME]
-colors = plt.cm.tab10(np.linspace(0, 1, len(state_names)))
+    state_names = STRAIN_NAMES + METABOLITE_NAMES + [TOXIN_NAME]
+    colors = plt.cm.tab10(np.linspace(0, 1, len(state_names)))
 
-fig, ax = plt.subplots(figsize=(9, 6))
-for i, (name, c) in enumerate(zip(state_names, colors)):
-    is_strain = name in STRAIN_NAMES
-    ax.plot(t_eval, traj[:, i], "-" if is_strain else "--",
-            color=c, linewidth=2.5 if is_strain else 1.5, label=name)
-ax.set_yscale("log")
-ax.set_xlabel("time")
-ax.set_ylabel("population / concentration (log scale)")
-ax.set_title(f"2-strain, 3-metabolite, 1-toxin system\n(metabolites {'SHARE' if SHARE_UPTAKE else 'do NOT share'} uptake capacity)")
-ax.legend(fontsize=9, loc="best")
-fig.tight_layout()
-fig.savefig("standalone_two_strain_result.png", dpi=150)
-print("saved standalone_two_strain_result.png")
+    fig, ax = plt.subplots(figsize=(9, 6))
+    for i, (name, c) in enumerate(zip(state_names, colors)):
+        is_strain = name in STRAIN_NAMES
+        ax.plot(t_eval, traj[:, i], "-" if is_strain else "--",
+                color=c, linewidth=2.5 if is_strain else 1.5, label=name)
+    ax.set_yscale("log")
+    ax.set_xlabel("time")
+    ax.set_ylabel("population / concentration (log scale)")
+    ax.set_title(f"2-strain, 3-metabolite, 1-toxin system\n(metabolites {'SHARE' if SHARE_UPTAKE else 'do NOT share'} uptake capacity)")
+    ax.legend(fontsize=9, loc="best")
+    fig.tight_layout()
+    fig.savefig("standalone_two_strain_result.png", dpi=150)
+    print("saved standalone_two_strain_result.png")
 
-print(f"\nFinal values (t={t_eval[-1]}):")
-for name, val in zip(state_names, traj[-1]):
-    print(f"  {name}: {val:.4g}")
+    print(f"\nFinal values (t={t_eval[-1]}):")
+    for name, val in zip(state_names, traj[-1]):
+        print(f"  {name}: {val:.4g}")

@@ -1,11 +1,23 @@
 # Project B: Spatial Monod PDE (gut microbiome spatial model)
 
+## Status: implemented (v1) in `spatial_pde/src/`
+
+The finite-volume mesh/transport/reaction/solver framework described below is
+implemented and tested (`spatial_pde/tests/`) — see the end of this file for
+what's done, the modeling choices actually made (vs. left open below), and
+known v1 limitations. The rest of this document is kept as the original
+design spec; read it for the reasoning behind those choices.
+
 ## Goal
 
 Extend the validated well-mixed (ODE) Monod system into a spatial
-reaction-diffusion PDE representing a 1D gut-axis geometry (extensible later
-to more realistic geometry), so strain, metabolite and toxin distributions can
-vary along the gut rather than being single lumped pools.
+reaction-diffusion PDE over **1D, 2D, or 3D geometry** — not just a straight
+gut-axis line — so strain, metabolite and toxin distributions can vary in
+space rather than being single lumped pools. A 1D line with a variable
+cross-sectional area profile cheaply approximates a real gut's changing
+diameter; a full unstructured 2D/3D mesh (imported from Gmsh/CAD/a segmented
+scan, or a structured generator) handles genuinely non-tube geometry, like a
+bespoke experimental vessel or a branched/non-uniform gut segment.
 
 ## Core formulation
 
@@ -97,18 +109,75 @@ Needs an explicit decision, flagged to the user if not already specified:
    none of the uploaded experimental spreadsheets appear to be spatially
    resolved — confirm with the user before assuming any are).
 
-## Suggested file layout inside `spatial_pde/`
+## File layout inside `spatial_pde/` (as implemented)
 
 ```
 spatial_pde/
 ├── src/
-│   ├── grid.py            # 1D spatial discretization utilities
-│   ├── reaction.py        # thin wrapper calling into shared/monod_core
-│   ├── transport.py       # diffusion + advection operators
-│   ├── solve.py           # method-of-lines integration (operator splitting)
-│   └── boundary.py        # boundary condition implementations
+│   ├── mesh.py             # 1D/2D/3D finite-volume mesh geometry + generators +
+│   │                        # Mesh.from_meshio() for real/arbitrary geometry
+│   ├── boundary.py          # Dirichlet / Neumann(no-flux default) / Outflow
+│   ├── transport.py         # dimension-agnostic diffusion (TPFA) + advection (upwind)
+│   ├── reaction.py          # thin wrapper batching shared/monod_core across mesh cells
+│   └── solve.py             # operator-split time integration (FieldSpec, SpatialConfig)
 ├── tests/
 │   ├── test_zero_diffusion_matches_ode.py   # validation plan #1
-│   └── test_mass_conservation.py            # validation plan #2
+│   ├── test_mass_conservation.py            # validation plan #2 (1D/2D/3D)
+│   └── test_mesh_import.py                  # Mesh.from_meshio() geometry correctness
 └── data/                   # any spatial reference data, if/when available
 ```
+
+(The original plan called the mesh module `grid.py`, scoped to 1D; it became
+`mesh.py` once genuine 2D/3D unstructured-mesh support was in scope, since
+"grid" undersold what it now does.)
+
+## Status: implementation notes and known v1 limitations
+
+Modeling decisions the sections above left open, as actually resolved:
+
+- **Numerical approach**: option (a), operator splitting — reaction
+  integrated in log-space per cell (reusing `shared/monod_core` unmodified,
+  batched across cells), diffusion+advection integrated implicitly
+  (backward Euler) in linear space. **v1 uses first-order (Lie) splitting**
+  (reaction then transport, each over the full timestep) rather than
+  second-order Strang splitting (half-transport / full-reaction /
+  half-transport) — a real accuracy-vs-simplicity tradeoff worth revisiting
+  if a group needs tighter time-accuracy, not an oversight.
+- **Discretization**: finite-volume (not finite-difference), on a simplicial
+  mesh (1D line segments, 2D triangles, or 3D tetrahedra) — chosen
+  specifically because it generalizes to unstructured/imported geometry and
+  guarantees exact mass conservation for the diffusion/advection terms
+  (verified in `test_mass_conservation.py`), which finite-difference on a
+  non-uniform grid does not.
+- **Diffusive flux**: a two-point flux approximation (TPFA) — flux between
+  two cells is `D * face_area / centroid_distance * (u_i - u_j)`. This
+  assumes the line between adjacent cell centroids is reasonably
+  perpendicular to their shared face, which holds for the built-in
+  generators and for Delaunay-quality unstructured meshes. A badly skewed
+  imported mesh would need a non-orthogonal flux correction this v1 doesn't
+  implement — worth checking mesh quality (or adding that correction) before
+  trusting results on a very irregular real-geometry import.
+- **Boundary conditions**: implemented per-boundary-tag, per-field
+  (`spatial_pde/src/boundary.py`): `Dirichlet(value)`, `Neumann(flux=0.0)`
+  (no-flux is the default, per this doc's own recommendation above), and
+  `Outflow()` (zero-gradient/advective exit). A `Dirichlet` boundary where
+  the local velocity points inward is treated as an inflow at that
+  concentration (the proximal-end "continuous intake" case above); an
+  `Outflow`/`Neumann` boundary with unexpected inflow is treated as
+  zero-concentration inflow, since no value was specified for what's
+  entering.
+- **The lag/readiness state `q`** (docs/model_equations.md §5) is treated as
+  a per-cell, cell-autonomous property: it evolves via the local reaction
+  step only and is NOT itself transported between cells. This matches the
+  validated well-mixed model (`q` lives per-population, not per-place); a
+  group wanting readiness/adaptation to spread spatially (e.g. a
+  quorum-sensing-like signal) would need to add `q` as its own transported
+  field, which this module does not currently do.
+- **Geometry**: `Mesh.from_meshio()` is the general path for real/arbitrary
+  shapes; it does not infer boundary semantics (which face is "proximal
+  inlet" vs. "gut wall") from an imported mesh's own physical-group tags, on
+  the theory that no single convention generalizes across meshing tools —
+  instead you supply a `boundary_tag_fn(face_centroid) -> tag_name`
+  classifier, which is usually a one-line function based on position. The
+  built-in generators (`generate_line`, `generate_rectangle`, `generate_box`)
+  apply sensible default tags automatically.

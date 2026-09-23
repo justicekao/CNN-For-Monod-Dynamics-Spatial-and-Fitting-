@@ -151,3 +151,52 @@ decide explicitly whether to support them or scope them out:
   target dynamics) — not always biologically motivated, so treat it as a
   configurable topology (shared pool vs. per-strain pool vs. arbitrary
   strain→pool assignment graph) rather than baking in one assumption.
+
+## 6. Implementation: the configurable kinetics engine
+
+Sections 1-5 above are implemented as ONE configurable engine,
+`shared/monod_core/kinetics.py` (`MonodConfig` + `reaction_rhs()`), rather
+than as separate scripts per variant — the whole point being that a research
+group can flip between the modified-Monod variants it actually works with
+without hand-editing an ODE right-hand side each time. Validated against
+both reference scripts' exact math in `shared/tests/test_kinetics.py`.
+
+- **§1's toxin-vs-metabolite denominator choice** is `ToxinMode` per strain:
+  `INDEPENDENT` (each toxin has its own denominator — the default, and what
+  both reference scripts do), `SHARED_AMONG_TOXINS` (a strain's toxins share
+  one denominator with each other but not with its metabolites), or
+  `COMBINED_WITH_METABOLITES` (toxins join the SAME shared uptake-capacity
+  pool as metabolites — requires `share_metabolite_uptake=True` for that
+  strain, since "independent per metabolite but toxins share one of them"
+  isn't well-defined; this is enforced with a clear error at config build
+  time). §1's metabolite share-vs-independent choice is
+  `share_metabolite_uptake`, also per strain.
+- **§3's `P`/kill-rate convention**: `kinetics.py` always SUBTRACTS a toxin's
+  contribution from per-capita growth (`P`, matching
+  `FitMicrobialSystemApp.m`'s canonical form), rather than
+  `standalone_two_strain_system.py`'s older signed `TOXIN_GROWTH_RATE`
+  convention (positive or negative, added directly). A beneficial resource
+  should be modeled as a metabolite, not a "toxin" with positive `P`.
+  `c_tox` (consumption/binding, subtracted from `dtox`, generalizing
+  `TOXIN_CONSUMPTION`) and `s_secretion` (secretion, added to `dtox`,
+  matching the MATLAB app's `s` matrix) are both supported and independent of
+  each other, since a real system can have strains that bind a toxin,
+  secrete one, both, or neither.
+- **§5's transfer/transconjugation** is `TransferEvent(donor, recipient,
+  product, rate)`: contact between `donor` and `recipient` populations adds
+  `rate * N[donor] * N[recipient]` to `product`'s growth, without depleting
+  donor or recipient. `product` can be a third, distinct strain (the exact
+  validated conjugation model: Donor + Recipient → Transconjugant) or equal
+  to `recipient` (the simpler "`Z[i,j]`: strain i converts j" reading of a
+  dense transfer matrix). An arbitrary set of these events generalizes both
+  a dense `Z` matrix and the single ad-hoc `TRANSFER_RATE` term.
+- **§5's lag state** is `LagConfig`: per-strain `q_rate`, `q_reference_density`
+  (used only to compute `q0` deterministically from a strain's own initial
+  density, never fit), `mort_floor`, and `lag_source` (which strain's `q`
+  this strain's realized growth/mortality actually uses — defaults to
+  itself, but can point at another strain, exactly reproducing
+  Transconjugant inheriting Recipient's `qr` instead of tracking its own).
+- **Private vs. shared resource pools (§5)** need no special config: it falls
+  out of the `r`/`k`/`c` matrix shapes directly — give each strain its own
+  metabolite column(s) (zero elsewhere) for private pools, or let multiple
+  strains share a column for a shared pool, or any mix in between.

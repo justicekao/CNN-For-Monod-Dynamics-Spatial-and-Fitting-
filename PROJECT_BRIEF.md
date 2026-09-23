@@ -105,9 +105,13 @@ monod-ml-handoff/
 1. Read `docs/model_equations.md`.
 2. Pick a project (or ask the user which to start with if unspecified).
 3. Read that project's spec doc.
-4. Start with `shared/monod_core/` as a library: refactor the pure reaction-rate
-   functions (currently copy-pasted across the two reference scripts) into a
-   small shared module (e.g. `shared/monod_core/kinetics.py`) that both
-   `curriculum_nn/` and `spatial_pde/` import, rather than each project
-   reimplementing the Monod term. This refactor is low-risk, high-leverage,
-   and should happen before either project's core work starts.
+4. ~~Start with `shared/monod_core/` as a library...~~ **Done.**
+   `shared/monod_core/kinetics.py` is that shared module: a configurable
+   `MonodConfig` covering the toxin-denominator / metabolite-sharing /
+   transfer / lag variants described in `docs/model_equations.md`, validated
+   against both reference scripts' exact math in
+   `shared/tests/test_kinetics.py`. `spatial_pde/` already imports and reuses
+   it (see `docs/spatial_pde_spec.md`'s "Status" section) for its local
+   reaction term, batched across mesh cells with no duplicated math.
+   `curriculum_nn/` should do the same for its synthetic-data generator
+   rather than reimplementing the ODE.
